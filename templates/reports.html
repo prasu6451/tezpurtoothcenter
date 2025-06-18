@@ -19,13 +19,12 @@
                 {% for report in reports %}
                     <tr>
                         <td>
-                            {% set img_path = '/' + report[1] %}
-                            <img src="{{ img_path }}" width="200" alt="Report Image">
+                            <img src="/{{ report['image_path'] }}" width="200" alt="Report Image">
                         </td>
                         <td>
-                            <pre style="white-space: pre-wrap;">{{ report[2] }}</pre>
+                            <pre style="white-space: pre-wrap;">{{ report['detection_result'] }}</pre>
                         </td>
-                        <td>{{ report[3] }}</td>
+                        <td>{{ report['created_at'] }}</td>
                     </tr>
                 {% endfor %}
             </tbody>
