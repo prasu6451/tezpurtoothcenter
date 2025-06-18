@@ -1,0 +1,11 @@
+flask
+flask_wtf
+bcrypt
+flask_mysqldb
+flask_mail
+email_validator
+random
+ultralytics
+random
+os
+datetime

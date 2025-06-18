@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}My Reports{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>🧾 Past Analysis Reports</h1>
+    <a href="{{ url_for('dashboard') }}" class="logout-btn" style="background-color:#1976d2;">⬅ Back to Dashboard</a>
+    <br><br>
+    {% if reports %}
+        <table border="1" cellpadding="10" cellspacing="0" style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background-color: #f2f2f2;">
+                    <th>Image</th>
+                    <th>Detections</th>
+                    <th>Date & Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for report in reports %}
+                    <tr>
+                        <td>
+                            {% set img_path = '/' + report[1] %}
+                            <img src="{{ img_path }}" width="200" alt="Report Image">
+                        </td>
+                        <td>
+                            <pre style="white-space: pre-wrap;">{{ report[2] }}</pre>
+                        </td>
+                        <td>{{ report[3] }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No reports found.</p>
+    {% endif %}
+</div>
+{% endblock %}
