@@ -1,3 +1,4 @@
+# app.py
 from flask import Flask, render_template, redirect, url_for, session, flash, request
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField
@@ -7,20 +8,15 @@ from flask_mail import *
 import random
 import os
 import datetime
-import pymysql
+import sqlite3
 from werkzeug.utils import secure_filename
 from yolo_model import run_yolo_analysis
+import ast
 
 app = Flask(__name__)
 
-# DB Config
-db_config = {
-    'host': '127.0.0.1',
-    'user': 'root',
-    'password': '',
-    'database': 'TezpurToothCenter',
-    'cursorclass': pymysql.cursors.DictCursor
-}
+# SQLite Config
+DATABASE = 'database.db'
 app.secret_key = 'secret_key'
 
 # Mail Config
@@ -37,6 +33,10 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def get_db_connection():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 class RegisterForm(FlaskForm):
     name = StringField("Name", validators=[DataRequired()])
@@ -53,37 +53,32 @@ class EmailVerifyForm(FlaskForm):
     otp = StringField("Enter OTP", validators=[DataRequired()])
     submit = SubmitField("Verify")
 
-
 @app.route('/')
 def index():
-    return redirect(url_for('register'))
+    return render_template('index.html')
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     form = RegisterForm()
     if form.validate_on_submit():
-        name = form.name.data 
-        email = form.email.data 
+        name = form.name.data
+        email = form.email.data
         password = form.password.data
         session['email'] = email
         hash_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 
-        connection = pymysql.connect(**db_config)
-        cursor = connection.cursor()
-        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
-        existing_user = cursor.fetchone()
+        conn = get_db_connection()
+        user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
 
-        if existing_user:
+        if user:
             flash("Email already registered. Please log in or use a different email.")
-            cursor.close()
-            connection.close()
+            conn.close()
             return redirect(url_for('register'))
         else:
-            cursor.execute("INSERT INTO users (name, email, password, verified) VALUES (%s,%s,%s, %s)",
-                           (name, email, hash_password.decode('utf-8'), False))
-            connection.commit()
-            cursor.close()
-            connection.close()
+            conn.execute("INSERT INTO users (name, email, password, verified) VALUES (?, ?, ?, ?)",
+                         (name, email, hash_password.decode('utf-8'), False))
+            conn.commit()
+            conn.close()
 
         otp = random.randint(100000, 999999)
         session['otp'] = otp
@@ -103,38 +98,31 @@ def email_verify():
         email = session.get('email')
         if 'otp' in session and int(user_otp) == session['otp']:
             flash("Email verified successfully!", "success")
-            connection = pymysql.connect(**db_config)
-            cursor = connection.cursor()
-            cursor.execute("UPDATE users SET verified = TRUE WHERE email = %s", (email,))
-            connection.commit()
-            cursor.close()
-            connection.close()
+            conn = get_db_connection()
+            conn.execute("UPDATE users SET verified = 1 WHERE email = ?", (email,))
+            conn.commit()
+            conn.close()
             return redirect(url_for('login'))
         else:
             flash("Invalid OTP. Please try again.", "danger")
-            connection = pymysql.connect(**db_config)
-            cursor = connection.cursor()
-            cursor.execute("DELETE FROM users WHERE email = %s AND verified = FALSE", (email,))
-            connection.commit()
-            cursor.close()
-            connection.close()
+            conn = get_db_connection()
+            conn.execute("DELETE FROM users WHERE email = ? AND verified = 0", (email,))
+            conn.commit()
+            conn.close()
             return redirect(url_for('register'))
-    
+
     return render_template('email_verify.html', form=form)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     form = LoginForm()
     if form.validate_on_submit():
-        email = form.email.data 
+        email = form.email.data
         password = form.password.data
 
-        connection = pymysql.connect(**db_config)
-        cursor = connection.cursor()
-        cursor.execute("SELECT * FROM users WHERE email=%s", (email,))
-        user = cursor.fetchone()
-        cursor.close()
-        connection.close()
+        conn = get_db_connection()
+        user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        conn.close()
 
         if user and bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
             session['user_id'] = user['id']
@@ -148,14 +136,9 @@ def login():
 @app.route('/dashboard', methods=['GET', 'POST'])
 def dashboard():
     if 'user_id' in session:
-        user_id = session['user_id']
-
-        connection = pymysql.connect(**db_config)
-        cursor = connection.cursor()
-        cursor.execute("SELECT * FROM users WHERE id=%s", (user_id,))
-        user = cursor.fetchone()
-        cursor.close()
-        connection.close()
+        conn = get_db_connection()
+        user = conn.execute("SELECT * FROM users WHERE id = ?", (session['user_id'],)).fetchone()
+        conn.close()
 
         if user:
             annotated_img = session.pop('annotated_img', None)
@@ -182,25 +165,16 @@ def analyze():
         filename = secure_filename(file.filename)
         user_folder = os.path.join('static/uploads', str(session['user_id']))
         os.makedirs(user_folder, exist_ok=True)
-
         filepath = os.path.join(user_folder, filename)
         file.save(filepath)
 
         result_img_path, detections = run_yolo_analysis(filepath)
 
-        connection = pymysql.connect(**db_config)
-        cursor = connection.cursor()
-        cursor.execute("""
-            INSERT INTO reports (user_id, image_path, detection_result) 
-            VALUES (%s, %s, %s)
-        """, (
-            session['user_id'], 
-            result_img_path, 
-            str(detections)
-        ))
-        connection.commit()
-        cursor.close()
-        connection.close()
+        conn = get_db_connection()
+        conn.execute("INSERT INTO reports (user_id, image_path, detection_result, created_at) VALUES (?, ?, ?, ?)",
+                     (session['user_id'], result_img_path, str(detections), datetime.datetime.now()))
+        conn.commit()
+        conn.close()
 
         session['annotated_img'] = result_img_path
         session['detections'] = detections
@@ -210,44 +184,35 @@ def analyze():
     flash('File type not allowed')
     return redirect(url_for('dashboard'))
 
+
 @app.route('/reports')
 def reports():
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    user_id = session['user_id']
-    connection = pymysql.connect(**db_config)
-    cursor = connection.cursor()
-    cursor.execute("""
-        SELECT id, image_path, detection_result, created_at 
-        FROM reports 
-        WHERE user_id = %s 
-        ORDER BY created_at DESC
-    """, (user_id,))
-    report_data = cursor.fetchall()
-    cursor.close()
-    connection.close()
+    conn = get_db_connection()
+    report_data = conn.execute(
+        "SELECT id, image_path, detection_result, created_at FROM reports WHERE user_id = ? ORDER BY created_at DESC",
+        (session['user_id'],)
+    ).fetchall()
+    conn.close()
 
-    return render_template('reports.html', reports=report_data)
+    # Convert immutable rows to mutable dicts and parse detection results
+    parsed_reports = []
+    for report in report_data:
+        r = dict(report)
+        try:
+            r['parsed_detections'] = ast.literal_eval(r['detection_result']) if r['detection_result'] else []
+        except Exception:
+            r['parsed_detections'] = []
+        parsed_reports.append(r)
 
-@app.route('/db_test')
-def db_test():
-    try:
-        connection = pymysql.connect(**db_config)
-        cursor = connection.cursor()
-        cursor.execute("SELECT VERSION()")
-        version = cursor.fetchone()
-        cursor.close()
-        connection.close()
-        return f"MySQL version: {version['VERSION()']}"
-    except Exception as e:
-        return f"DB Error: {e}", 500
+    return render_template('reports.html', reports=parsed_reports)
 
 @app.route('/logout')
 def logout():
     session.pop('user_id', None)
     return redirect(url_for('login'))
 
-
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='192.168.195.61')
