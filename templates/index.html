@@ -25,10 +25,26 @@
       </ul>
     </nav>
 
-    <!-- Hero Section with Background Image -->
-    <section
-      class="relative bg-cover bg-center bg-no-repeat text-center text-white py-32"
-      style="background-image: url('/static/background3.jpg');">
+    <!-- ✅ Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="max-w-3xl mx-auto mt-6">
+          {% for category, message in messages %}
+            <div class="mb-4 px-4 py-3 rounded text-white {{ 
+                'bg-green-500' if category == 'success' else 
+                'bg-red-500' if category == 'danger' else 
+                'bg-yellow-500' if category == 'warning' else 
+                'bg-blue-500' 
+            }}">
+              {{ message }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <!-- Hero Section -->
+    <section class="relative bg-cover bg-center bg-no-repeat text-center text-white py-32" style="background-image: url('/static/background3.jpg');">
       <div class="absolute inset-0 bg-blue-900 bg-opacity-60"></div>
       <div class="relative z-10 px-4">
         <h2 class="text-4xl font-bold mb-4">Welcome to Government Dental College, Dibrugarh</h2>
@@ -37,6 +53,26 @@
         </p>
         <a href="#" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Explore More</a>
       </div>
+    </section>
+
+    <!-- Report Request Form -->
+    <section class="max-w-3xl mx-auto bg-white shadow-md rounded-lg px-8 py-10 mt-12 mb-16">
+      <h3 class="text-xl font-semibold text-blue-700 mb-6 text-center">📄 Request Your Dental Report</h3>
+      <form action="/send_report" method="POST" class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+        <div>
+          <label for="application_number" class="block text-sm font-medium text-gray-700 mb-1">Application Number</label>
+          <input type="text" name="application_number" id="application_number" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+          <input type="email" name="email" id="email" required class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="sm:col-span-2 text-center">
+          <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2 rounded">
+            Send Report
+          </button>
+        </div>
+      </form>
     </section>
 
     <!-- Features Section -->
@@ -60,8 +96,8 @@
       <p>&copy; 2025 Government Dental College, Dibrugarh. All rights reserved.</p>
     </footer>
 
+    <!-- Toggle mobile nav -->
     <script>
-      // Toggle mobile menu
       document.getElementById('menu-toggle').addEventListener('click', function () {
         document.getElementById('mobile-menu').classList.toggle('hidden');
       });

@@ -14,11 +14,12 @@ CREATE TABLE IF NOT EXISTS users (
 )
 ''')
 
-# Create reports table
+# Create reports table with application_number
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
+    application_number TEXT NOT NULL,
     image_path TEXT NOT NULL,
     detection_result TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -29,4 +30,4 @@ CREATE TABLE IF NOT EXISTS reports (
 connection.commit()
 connection.close()
 
-print("✅ Database initialized.")
+print("✅ Database initialized with application_number.")

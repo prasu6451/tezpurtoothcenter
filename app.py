@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, render_template, redirect, url_for, session, flash, request
+from flask import Flask, render_template, redirect, url_for, session, flash, request, send_file
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField
 from wtforms.validators import DataRequired, Email
@@ -12,6 +12,9 @@ import sqlite3
 from werkzeug.utils import secure_filename
 from yolo_model import run_yolo_analysis
 import ast
+import smtplib
+from email.message import EmailMessage
+from PIL import Image
 
 app = Flask(__name__)
 
@@ -171,8 +174,26 @@ def analyze():
         result_img_path, detections = run_yolo_analysis(filepath)
 
         conn = get_db_connection()
-        conn.execute("INSERT INTO reports (user_id, image_path, detection_result, created_at) VALUES (?, ?, ?, ?)",
-                     (session['user_id'], result_img_path, str(detections), datetime.datetime.now()))
+
+        # Count existing reports for this user
+        report_count = conn.execute(
+            "SELECT COUNT(*) FROM reports WHERE user_id = ?", (session['user_id'],)
+        ).fetchone()[0] + 1
+
+        # Generate application number
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        application_number = f"APP-{timestamp}-{session['user_id']}-{report_count}"
+
+        conn.execute("""
+            INSERT INTO reports (user_id, application_number, image_path, detection_result, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            session['user_id'],
+            application_number,
+            result_img_path,
+            str(detections),
+            datetime.datetime.now()
+        ))
         conn.commit()
         conn.close()
 
@@ -192,12 +213,11 @@ def reports():
 
     conn = get_db_connection()
     report_data = conn.execute(
-        "SELECT id, image_path, detection_result, created_at FROM reports WHERE user_id = ? ORDER BY created_at DESC",
+        "SELECT id, application_number, image_path, detection_result, created_at FROM reports WHERE user_id = ? ORDER BY created_at DESC",
         (session['user_id'],)
     ).fetchall()
     conn.close()
 
-    # Convert immutable rows to mutable dicts and parse detection results
     parsed_reports = []
     for report in report_data:
         r = dict(report)
@@ -209,10 +229,73 @@ def reports():
 
     return render_template('reports.html', reports=parsed_reports)
 
+@app.route('/send_report', methods=['POST'])
+def send_report():
+    application_number = request.form.get('application_number')
+    email = request.form.get('email')
+
+    if not application_number or not email:
+        flash("Application number and email are required", "danger")
+        return redirect(url_for('index'))
+
+    conn = get_db_connection()
+    report = conn.execute(
+        "SELECT image_path, detection_result FROM reports WHERE application_number = ?", (application_number,)
+    ).fetchone()
+    conn.close()
+
+    if not report:
+        flash("No report found for the provided application number.", "warning")
+        return redirect(url_for('index'))
+
+    image_path = report['image_path']
+    detection_result = ast.literal_eval(report['detection_result']) if report['detection_result'] else []
+
+    # Check image validity using Pillow
+    try:
+        with Image.open(image_path) as img:
+            img_format = img.format
+    except Exception:
+        flash("Image file is invalid or missing.", "danger")
+        return redirect(url_for('index'))
+
+    # Build detection result string
+    if detection_result:
+        detection_text = "\n".join([f"{d['label']} — Confidence: {d['confidence']}%" for d in detection_result])
+    else:
+        detection_text = "No findings detected in the X-ray."
+
+    # Compose email
+    msg = Message(
+        subject="🦷 Your Dental X-ray Analysis Report",
+        sender=app.config['MAIL_USERNAME'],
+        recipients=[email]
+    )
+    msg.body = f"Dear User,\n\nHere is your dental report for Application No: {application_number}.\n\nFindings:\n{detection_text}\n\nRegards,\nDibrugarh Dental College"
+
+    # Attach image
+    with open(image_path, 'rb') as img_file:
+        msg.attach(
+            filename=os.path.basename(image_path),
+            content_type=f'image/{img_format.lower()}',
+            data=img_file.read()
+        )
+
+    try:
+        mail.send(msg)
+        flash("Report has been sent to your email.", "success")
+    except Exception as e:
+        print("[ERROR] Email send failed:", e)
+        flash("Failed to send email. Please try again later.", "danger")
+
+    
+    return redirect(url_for('index'))
+
+
 @app.route('/logout')
 def logout():
     session.pop('user_id', None)
     return redirect(url_for('login'))
 
 if __name__ == '__main__':
-    app.run(debug=True, host='192.168.195.61')
+    app.run(debug=True)
